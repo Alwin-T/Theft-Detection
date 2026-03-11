@@ -2,6 +2,11 @@ import os
 import cv2
 import json
 import asyncio
+import logging
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.image import MIMEImage
 import torch
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Form
 from fastapi.responses import HTMLResponse, StreamingResponse, RedirectResponse
@@ -9,6 +14,18 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from ultralytics import YOLO
 import ultralytics
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Configure logging to write to a file
+logging.basicConfig(
+    filename='suspicious_activity.logs',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 # PyTorch 2.6+ security update workaround for loading YOLO weights
 torch.serialization.add_safe_globals([ultralytics.nn.tasks.DetectionModel])
@@ -27,9 +44,9 @@ try:
 except Exception as e:
     print(f"Error loading model: {e}")
 
-VIDEO_SOURCE = 'dataset/SD/SL/videmmmmmmsss_90.mp4'
+VIDEO_SOURCE = '0'
 
-CONSECUTIVE_FRAMES_THRESHOLD = 5
+CONSECUTIVE_FRAMES_THRESHOLD = 3
 class_1_consecutive_frames = 0
 suspicious_activity_flag = False
 
@@ -49,6 +66,88 @@ async def broadcast_alert(message: dict):
             await connection.send_json(message)
         except Exception:
             pass
+
+def send_email_alert_sync(timestamp_str: str, image_bytes: bytes):
+    sender = os.environ.get("SENDER_EMAIL")
+    receiver = os.environ.get("RECEIVER_EMAIL")
+    password = os.environ.get("GMAIL_APP_PASSWORD")
+    smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
+    smtp_port = int(os.environ.get("SMTP_PORT", 465))
+    
+    if not sender or not receiver or not password:
+        logging.warning("Email alert skipped: Missing SENDER_EMAIL, RECEIVER_EMAIL, or GMAIL_APP_PASSWORD in .env")
+        return
+
+    try:
+        msg = MIMEMultipart('alternative')
+        msg["Subject"] = "🚨 SECURITY ALERT: Suspicious Activity Detected"
+        msg["From"] = sender
+        msg["To"] = receiver
+
+        # Plain text fallback
+        text_content = f"Suspicious activity (Class 1) was detected by the AI model at {timestamp_str}.\nPlease check the dashboard immediately."
+        
+        # HTML design
+        html_content = f"""
+        <html>
+          <body style="margin: 0; padding: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #0a0a0f; color: #ffffff;">
+            <div style="max-width: 600px; margin: 40px auto; background-color: #1a1a24; border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,51,102,0.3); box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+              
+              <!-- Header -->
+              <div style="background: linear-gradient(135deg, #ff3366 0%, #cc0033 100%); padding: 30px; text-align: center;">
+                <h1 style="margin: 0; color: #ffffff; font-size: 24px; letter-spacing: 1px;">🚨 SECURITY ALERT</h1>
+              </div>
+              
+              <!-- Body -->
+              <div style="padding: 40px 30px;">
+                <h2 style="margin-top: 0; color: #ffffff; font-size: 20px;">Suspicious Activity Detected</h2>
+                <p style="color: #888899; font-size: 16px; line-height: 1.6;">
+                  The AI model has detected high-confidence suspicious behavior (Class 1) on your video feed.
+                </p>
+                
+                <div style="background-color: rgba(255, 255, 255, 0.05); border-left: 4px solid #ff3366; padding: 15px 20px; border-radius: 4px; margin: 25px 0;">
+                  <strong style="color: #ffffff; display: block; margin-bottom: 5px;">Time of Detection:</strong>
+                  <span style="color: #00e676; font-family: monospace; font-size: 16px;">{timestamp_str}</span>
+                </div>
+                
+                <p style="color: #888899; font-size: 16px; line-height: 1.6; margin-bottom: 30px;">
+                  Please review the live records or logs immediately to verify the situation.
+                </p>
+              </div>
+              
+              <!-- Footer -->
+              <div style="background-color: #12121a; padding: 20px; text-align: center; border-top: 1px solid rgba(255,255,255,0.05);">
+                <p style="margin: 0; color: #555566; font-size: 12px;">This is an automated alert from Theft Detector v1.</p>
+              </div>
+              
+            </div>
+          </body>
+        </html>
+        """
+        # Attach parts
+        part1 = MIMEText(text_content, 'plain')
+        part2 = MIMEText(html_content, 'html')
+        msg.attach(part1)
+        msg.attach(part2)
+        
+        # Attach image
+        if image_bytes:
+            image_part = MIMEImage(image_bytes, name=f"detection_{timestamp_str.replace(':', '-')}.jpg")
+            image_part.add_header('Content-ID', '<suspicious_frame>')
+            msg.attach(image_part)
+
+        with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
+            server.login(sender, password)
+            server.sendmail(sender, receiver, msg.as_string())
+        logging.info(f"Alert email sent successfully to {receiver} via {smtp_server}:{smtp_port}")
+    except Exception as e:
+        logging.error(f"Failed to send email alert: {e}")
+
+async def async_send_email_alert(image_bytes: bytes):
+    from datetime import datetime
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Run the blocking SMTP call in a separate thread so the video stream doesn't freeze
+    await asyncio.to_thread(send_email_alert_sync, now_str, image_bytes)
 
 async def async_process_video():
     global class_1_consecutive_frames, suspicious_activity_flag, model
@@ -90,6 +189,21 @@ async def async_process_video():
                     if class_1_consecutive_frames >= CONSECUTIVE_FRAMES_THRESHOLD:
                         if not suspicious_activity_flag:
                             suspicious_activity_flag = True
+                            logging.warning("Suspicious Activity Detected!")
+                            
+                            # Draw boxes on the full original frame for the email
+                            email_frame = frame.copy()
+                            for box in results[0].boxes:
+                                if int(box.cls[0]) == 1:
+                                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                                    cv2.rectangle(email_frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                                    cv2.putText(email_frame, "Suspicious Activity", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+                                    
+                            _, img_encoded = cv2.imencode('.jpg', email_frame)
+                            alert_image_bytes = img_encoded.tobytes()
+                            
+                            # Fire off the async email task independently
+                            asyncio.create_task(async_send_email_alert(alert_image_bytes))
                             await broadcast_alert({
                                 "type": "alert", 
                                 "message": "Suspicious Activity Detected!", 
@@ -99,6 +213,7 @@ async def async_process_video():
                     class_1_consecutive_frames = 0
                     if suspicious_activity_flag:
                         suspicious_activity_flag = False
+                        logging.info("Suspicious Activity Cleared.")
                         await broadcast_alert({
                             "type": "info", 
                             "message": "Activity cleared.", 
