@@ -1,0 +1,7 @@
+venv/
+runs/detect/predict*/
+.env
+__pycache__/
+shoplifting-3/
+*.jpg
+*.png
