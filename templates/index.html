@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CIF-AI Security Hub</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --surface: rgba(255, 255, 255, 0.03);
+            --border: rgba(255, 255, 255, 0.1);
+            --text-main: #ffffff;
+            --text-muted: #888899;
+            --accent: #5e6ad2;
+            --accent-glow: rgba(94, 106, 210, 0.5);
+            --danger: #ff3366;
+            --danger-glow: rgba(255, 51, 102, 0.5);
+            --success: #00e676;
+            --success-glow: rgba(0, 230, 118, 0.5);
+        }
+
+        body, html {
+            margin: 0; padding: 0; box-sizing: border-box;
+            background-color: var(--bg);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            height: 100vh; display: flex; flex-direction: column;
+            overflow: hidden;
+        }
+
+        .glass {
+            background: var(--surface);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+        }
+
+        .header {
+            padding: 24px 48px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header h1 {
+            margin: 0; font-size: 24px; font-weight: 800;
+            background: linear-gradient(90deg, #fff, var(--text-muted));
+            -webkit-background-clip: text; color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        .status-badge {
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 16px; border-radius: 99px;
+            font-size: 14px; font-weight: 600;
+            background: rgba(0, 230, 118, 0.1);
+            color: var(--success);
+            border: 1px solid var(--success-glow);
+            transition: all 0.3s ease;
+            box-shadow: 0 0 20px var(--success-glow);
+            min-width: 140px;
+            justify-content: center;
+        }
+        
+        .status-badge.alert {
+            background: rgba(255, 51, 102, 0.1);
+            color: var(--danger);
+            border: 1px solid var(--danger-glow);
+            box-shadow: 0 0 30px var(--danger-glow);
+            animation: pulse-danger 1.5s infinite;
+        }
+
+        .status-indicator {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 10px currentColor;
+        }
+
+        .main-content {
+            flex: 1; display: grid; grid-template-columns: 1fr 350px;
+            gap: 32px; padding: 32px 48px;
+            overflow: hidden;
+        }
+
+        .video-container {
+            display: flex; flex-direction: column; align-items: stretch;
+            position: relative; overflow: hidden;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.5);
+            transition: border-color 0.3s ease;
+        }
+        
+        .video-container.alert {
+            border-color: var(--danger);
+            box-shadow: 0 0 50px var(--danger-glow);
+        }
+
+        .video-header {
+            padding: 16px 24px; border-bottom: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 14px; font-weight: 600; color: var(--text-muted);
+        }
+
+        .glass-select {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-main);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-family: inherit;
+            font-size: 13px;
+            outline: none;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .glass-select:hover {
+            border-color: var(--accent);
+        }
+
+        .glass-select option {
+            background: var(--bg);
+            color: var(--text-main);
+        }
+
+        .video-feed-wrapper {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #000;
+            overflow: hidden;
+        }
+
+        .video-feed {
+            width: 100%; height: 100%; object-fit: contain;
+        }
+
+        .sidebar {
+            display: flex; flex-direction: column; gap: 24px;
+        }
+
+        .alert-log {
+            flex: 1; display: flex; flex-direction: column;
+            overflow: hidden;
+        }
+
+        .alert-log-header {
+            padding: 16px 24px; border-bottom: 1px solid var(--border);
+            font-size: 14px; font-weight: 600;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+
+        .log-messages {
+            flex: 1; overflow-y: auto; padding: 16px;
+            display: flex; flex-direction: column; gap: 12px;
+        }
+        
+        .log-messages::-webkit-scrollbar { width: 6px; }
+        .log-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        .log-item {
+            padding: 16px; border-radius: 16px;
+            background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border);
+            font-size: 14px; transition: transform 0.2s ease, opacity 0.2s ease;
+            animation: slideIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        
+        .log-item.critical {
+            background: rgba(255, 51, 102, 0.05); border-color: rgba(255, 51, 102, 0.2);
+            border-left: 4px solid var(--danger);
+        }
+        
+        .log-item.info {
+            border-left: 4px solid var(--success);
+        }
+
+        .log-time {
+            font-size: 12px; color: var(--text-muted); margin-bottom: 4px;
+        }
+        .log-title {
+            font-weight: 600; color: var(--text-main);
+        }
+
+        @keyframes pulse-danger {
+            0% { box-shadow: 0 0 20px var(--danger-glow); }
+            50% { box-shadow: 0 0 40px var(--danger-glow); }
+            100% { box-shadow: 0 0 20px var(--danger-glow); }
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(20px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .toast-container {
+            position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
+            z-index: 9999; display: flex; flex-direction: column; gap: 12px;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: rgba(255, 51, 102, 0.15); border: 1px solid var(--danger);
+            backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+            padding: 16px 32px; border-radius: 99px;
+            display: flex; align-items: center; gap: 16px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5), 0 0 40px var(--danger-glow);
+            animation: toastEnter 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        .toast-icon {
+            width: 24px; height: 24px;
+            background: var(--danger);
+            border-radius: 50%; display: flex; justify-content: center; align-items: center;
+            color: white; font-weight: bold; font-family: sans-serif;
+            box-shadow: 0 0 15px var(--danger);
+        }
+
+        .toast-text {
+            color: #fff; font-weight: 600; font-size: 16px; letter-spacing: 0.5px;
+        }
+
+        @keyframes toastEnter {
+            from { transform: translateY(-100px) scale(0.9); opacity: 0; }
+            to { transform: translateY(0) scale(1); opacity: 1; }
+        }
+        
+    </style>
+</head>
+<body>
+
+    <div class="toast-container" id="toast-container"></div>
+
+    <div class="header">
+        <h1>CIF-AI Security Hub</h1>
+        <div class="status-badge" id="system-status">
+            <div class="status-indicator"></div>
+            <span>System Secure</span>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="video-container glass" id="video-wrapper">
+            <div class="video-header">
+                <div style="display: flex; align-items: center; gap: 16px;">
+                    <span style="color: var(--accent); font-weight: 800;">LIVE FEED</span>
+                    <form action="/set_source" method="post" style="display: flex; gap: 8px; align-items: center;">
+                        <select name="source" class="glass-select" onchange="this.form.submit()">
+                            <option value="0" {% if current_source == '0' %}selected{% endif %}>📷 Webcam (0)</option>
+                            {% for vf in video_files %}
+                            <option value="{{ vf }}" {% if current_source == vf %}selected{% endif %}>🎬 {{ vf }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                </div>
+                <span>🧠 YOLOv11 Engine</span>
+            </div>
+            <div class="video-feed-wrapper">
+                <img src="/video_feed" class="video-feed" alt="Video Feed Loading..." />
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="alert-log glass">
+                <div class="alert-log-header">
+                    <span>Activity Log</span>
+                    <span id="connection-status" style="font-size: 12px; font-weight: 600; color: var(--success);">● Connected</span>
+                </div>
+                <div class="log-messages" id="log-messages">
+                    <div class="log-item info">
+                        <div class="log-time">System</div>
+                        <div class="log-title">Monitoring initialized. Stream connected.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const statusBadge = document.getElementById('system-status');
+        const statusText = statusBadge.querySelector('span');
+        const videoWrapper = document.getElementById('video-wrapper');
+        const logMessages = document.getElementById('log-messages');
+        const toastContainer = document.getElementById('toast-container');
+        const connStatus = document.getElementById('connection-status');
+
+        let ws = new WebSocket(`ws://${window.location.host}/ws/alerts`);
+        
+        let removeToastTimeout;
+
+        ws.onopen = function() {
+            addLog('WebSocket', 'Connected to alert server.', 'info');
+            connStatus.style.color = 'var(--success)';
+            connStatus.innerText = '● Connected';
+        };
+
+        ws.onclose = function() {
+            addLog('WebSocket', 'Connection lost, trying to reconnect...', 'critical');
+            connStatus.style.color = 'var(--danger)';
+            connStatus.innerText = '● Disconnected';
+            setTimeout(() => {
+                ws = new WebSocket(`ws://${window.location.host}/ws/alerts`);
+            }, 3000);
+        };
+
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            
+            if (data.level === 'critical') {
+                statusBadge.classList.add('alert');
+                statusText.innerText = 'SUSPICIOUS ACTIVITY';
+                videoWrapper.classList.add('alert');
+                
+                showToast(data.message);
+                addLog('AI Trigger', data.message, 'critical');
+                
+            } else if (data.level === 'info') {
+                if (data.message === 'Activity cleared.' || data.message.includes('Source changed') || data.message.includes('reset')) {
+                    statusBadge.classList.remove('alert');
+                    statusText.innerText = 'System Secure';
+                    videoWrapper.classList.remove('alert');
+                    clearToasts();
+                    
+                    if (data.message === 'Activity cleared.') {
+                        addLog('AI Update', data.message, 'info');
+                    } else {
+                        addLog('System', data.message, 'info');
+                    }
+                }
+            }
+        };
+
+        function addLog(source, message, type) {
+            const time = new Date().toLocaleTimeString();
+            const logEl = document.createElement('div');
+            logEl.className = `log-item ${type}`;
+            logEl.innerHTML = `
+                <div class="log-time">${time} • ${source}</div>
+                <div class="log-title">${message}</div>
+            `;
+            logMessages.prepend(logEl);
+            
+            if (logMessages.children.length > 50) {
+                logMessages.removeChild(logMessages.lastChild);
+            }
+        }
+
+        function showToast(message) {
+            clearToasts();
+            
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerHTML = `
+                <div class="toast-icon">!</div>
+                <div class="toast-text">${message}</div>
+            `;
+            toastContainer.appendChild(toast);
+        }
+
+        function clearToasts() {
+            const toasts = toastContainer.querySelectorAll('.toast');
+            toasts.forEach(t => {
+                t.style.opacity = '0';
+                t.style.transition = 'opacity 0.3s ease';
+                setTimeout(() => t.remove(), 300);
+            });
+        }
+    </script>
+</body>
+</html>
